@@ -13,6 +13,7 @@
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 import librosa
@@ -22,12 +23,38 @@ from transformers import AutoConfig, AutoModelForSeq2SeqLM, AutoProcessor
 
 from funaudiochat.register import register_funaudiochat
 from utils.constant import AUDIO_TEMPLATE, DEFAULT_S2M_GEN_KWARGS, DEFAULT_SP_GEN_KWARGS, SPOKEN_S2M_PROMPT
-from utils.cosyvoice_detokenizer import get_audio_detokenizer, token2wav
 
 register_funaudiochat()
 
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
+def _load_detokenizer_utils():
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    candidate_paths = [
+        repo_root / "third_party" / "CosyVoice",
+        repo_root / "third_party" / "CosyVoice" / "third_party" / "Matcha-TTS",
+        Path("/home/chang168/personaplex/Fun-Audio-Chat/third_party/CosyVoice"),
+        Path("/home/chang168/personaplex/Fun-Audio-Chat/third_party/CosyVoice/third_party/Matcha-TTS"),
+    ]
+
+    for p in candidate_paths:
+        p_str = str(p)
+        if p.exists() and p_str not in sys.path:
+            sys.path.insert(0, p_str)
+
+    try:
+        from utils.cosyvoice_detokenizer import get_audio_detokenizer, token2wav
+        return get_audio_detokenizer, token2wav
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "Failed to import CosyVoice detokenizer modules. "
+            "Please ensure CosyVoice submodule exists under "
+            "~/personaplex/Fun-Audio-Chat/third_party/CosyVoice "
+            "and contains package 'cosyvoice/cli'."
+        ) from exc
 
 
 def _build_model(model_path: str, use_kv_cache: bool = True):
@@ -84,6 +111,7 @@ def _generate_one_turn(processor, model, gen_kwargs, cosyvoice_model, conversati
 
 def infer_dataset_kv_cache(model_path: str, root_dir: str, use_kv_cache: bool = True):
     processor, model, gen_kwargs = _build_model(model_path, use_kv_cache=use_kv_cache)
+    get_audio_detokenizer, token2wav = _load_detokenizer_utils()
     print("Loading CosyVoice detokenizer...")
     cosyvoice_model = get_audio_detokenizer()
     print(f"KV cache enabled: {use_kv_cache}")
