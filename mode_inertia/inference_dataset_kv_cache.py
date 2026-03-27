@@ -30,7 +30,7 @@ register_funaudiochat()
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-def _build_model(model_path: str):
+def _build_model(model_path: str, use_kv_cache: bool = True):
     config = AutoConfig.from_pretrained(model_path)
     processor = AutoProcessor.from_pretrained(model_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -40,16 +40,16 @@ def _build_model(model_path: str):
         device_map=device,
     )
 
-    model.config.use_cache = True
+    model.config.use_cache = use_kv_cache
     if hasattr(model, "generation_config") and model.generation_config is not None:
-        model.generation_config.use_cache = True
+        model.generation_config.use_cache = use_kv_cache
 
     sp_gen_kwargs = DEFAULT_SP_GEN_KWARGS.copy()
     sp_gen_kwargs["text_greedy"] = True
 
     gen_kwargs = DEFAULT_S2M_GEN_KWARGS.copy()
     gen_kwargs["max_new_tokens"] = 2048
-    gen_kwargs["use_cache"] = True
+    gen_kwargs["use_cache"] = use_kv_cache
 
     model.sp_gen_kwargs.update(sp_gen_kwargs)
 
@@ -82,10 +82,11 @@ def _generate_one_turn(processor, model, gen_kwargs, cosyvoice_model, conversati
     conversation.append({"role": "assistant", "content": generate_text})
 
 
-def infer_dataset_kv_cache(model_path: str, root_dir: str):
-    processor, model, gen_kwargs = _build_model(model_path)
+def infer_dataset_kv_cache(model_path: str, root_dir: str, use_kv_cache: bool = True):
+    processor, model, gen_kwargs = _build_model(model_path, use_kv_cache=use_kv_cache)
     print("Loading CosyVoice detokenizer...")
     cosyvoice_model = get_audio_detokenizer()
+    print(f"KV cache enabled: {use_kv_cache}")
 
     root = Path(root_dir)
     if not root.exists() or not root.is_dir():
@@ -156,9 +157,18 @@ def _parse_args():
     )
     parser.add_argument("--model-path", type=str, required=True, help="Model path, e.g. pretrained_models/Fun-Audio-Chat-8B")
     parser.add_argument("--root-dir", type=str, required=True, help="Root directory containing sample subdirectories")
+    parser.add_argument(
+        "--no-kv-cache",
+        action="store_true",
+        help="Disable KV cache. By default KV cache is enabled.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    infer_dataset_kv_cache(model_path=args.model_path, root_dir=args.root_dir)
+    infer_dataset_kv_cache(
+        model_path=args.model_path,
+        root_dir=args.root_dir,
+        use_kv_cache=not args.no_kv_cache,
+    )
