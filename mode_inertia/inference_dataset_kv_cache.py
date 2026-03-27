@@ -30,6 +30,17 @@ register_funaudiochat()
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
+def _patch_hyperpyyaml_ruamel_compat():
+    """Patch HyperPyYAML loader for ruamel.yaml API mismatch on some remote envs."""
+    try:
+        from hyperpyyaml.core import Loader
+        if not hasattr(Loader, "max_depth"):
+            Loader.max_depth = None
+    except Exception:
+        # Keep inference path unchanged when hyperpyyaml is absent at import time.
+        pass
+
+
 def _load_detokenizer_utils():
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
@@ -111,6 +122,7 @@ def _generate_one_turn(processor, model, gen_kwargs, cosyvoice_model, conversati
 
 def infer_dataset_kv_cache(model_path: str, root_dir: str, use_kv_cache: bool = True):
     processor, model, gen_kwargs = _build_model(model_path, use_kv_cache=use_kv_cache)
+    _patch_hyperpyyaml_ruamel_compat()
     get_audio_detokenizer, token2wav = _load_detokenizer_utils()
     print("Loading CosyVoice detokenizer...")
     cosyvoice_model = get_audio_detokenizer()
