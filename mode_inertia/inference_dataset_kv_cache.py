@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import argparse
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -28,6 +29,16 @@ register_funaudiochat()
 
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
+def _no_cache_sdp_context(enabled: bool):
+    """Force math SDP path for no-cache generation to avoid backend KV-shape mismatch."""
+    if not enabled:
+        return contextlib.nullcontext()
+    try:
+        return torch.backends.cuda.sdp_kernel(enable_flash=False, enable_mem_efficient=False, enable_math=True)
+    except Exception:
+        return contextlib.nullcontext()
 
 
 def _patch_hyperpyyaml_ruamel_compat():
@@ -111,8 +122,10 @@ def _generate_one_turn(processor, model, gen_kwargs, cosyvoice_model, token2wav,
     text = processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
     inputs = processor(text=text, audio=audio_list, return_tensors="pt", return_token_type_ids=False).to(model.device)
 
+    use_cache = bool(gen_kwargs.get("use_cache", True))
     with torch.inference_mode():
-        generate_ids, audio_ids = model.generate(**inputs, **gen_kwargs)
+        with _no_cache_sdp_context(enabled=not use_cache):
+            generate_ids, audio_ids = model.generate(**inputs, **gen_kwargs)
 
     generate_ids = generate_ids[:, inputs.input_ids.size(1):]
     generate_text = processor.decode(generate_ids[0], skip_special_tokens=True)
