@@ -33,6 +33,16 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 def _patch_hyperpyyaml_ruamel_compat():
     """Patch HyperPyYAML loader for ruamel.yaml API mismatch on some remote envs."""
     try:
+        import yaml
+
+        for cls_name in ["Loader", "SafeLoader", "FullLoader", "UnsafeLoader", "CSafeLoader"]:
+            cls = getattr(yaml, cls_name, None)
+            if cls is not None and not hasattr(cls, "max_depth"):
+                cls.max_depth = None
+    except Exception:
+        pass
+
+    try:
         from hyperpyyaml.core import Loader
         if not hasattr(Loader, "max_depth"):
             Loader.max_depth = None
@@ -94,7 +104,7 @@ def _build_model(model_path: str, use_kv_cache: bool = True):
     return processor, model, gen_kwargs
 
 
-def _generate_one_turn(processor, model, gen_kwargs, cosyvoice_model, conversation, audio_list, input_audio_path, output_audio_path):
+def _generate_one_turn(processor, model, gen_kwargs, cosyvoice_model, token2wav, conversation, audio_list, input_audio_path, output_audio_path):
     audio_list.append(librosa.load(str(input_audio_path), sr=16000)[0])
     conversation.append({"role": "user", "content": AUDIO_TEMPLATE})
 
@@ -163,6 +173,7 @@ def infer_dataset_kv_cache(model_path: str, root_dir: str, use_kv_cache: bool = 
                 model,
                 gen_kwargs,
                 cosyvoice_model,
+                token2wav,
                 conversation,
                 audio_list,
                 input_question,
@@ -173,6 +184,7 @@ def infer_dataset_kv_cache(model_path: str, root_dir: str, use_kv_cache: bool = 
                 model,
                 gen_kwargs,
                 cosyvoice_model,
+                token2wav,
                 conversation,
                 audio_list,
                 input_interrupt,
